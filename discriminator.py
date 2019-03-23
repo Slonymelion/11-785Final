@@ -16,18 +16,18 @@ import numpy as np
 
 # module definition - basic building block for DPN
 class Bottleneck(nn.Module):
-    def __init__(self, previous, first, last, increment, stride=1, is_first_layer=True):
+    def __init__(self, previous, first, last, increment, stride=1, is_first_layer=True, negative_slope=0.2):
         outf = last+increment
         super(Bottleneck, self).__init__()
         self.last = last
         self.layers = []
         self.layers.append(nn.Conv2d(in_channels=previous, out_channels=first, kernel_size=1, bias=False))
         self.layers.append(nn.BatchNorm2d(first))
-        self.layers.append(nn.ReLU())
+        self.layers.append(nn.LeakyReLU(negative_slope=negative_slope))
         self.layers.append(nn.Conv2d(in_channels=first, out_channels=first, kernel_size=3,
                                      groups=32, stride=stride, padding=1, bias=False))
         self.layers.append(nn.BatchNorm2d(first))
-        self.layers.append(nn.ReLU())
+        self.layers.append(nn.LeakyReLU(negative_slope=negative_slope))
         self.layers.append(nn.Conv2d(in_channels=first, out_channels=outf, kernel_size=1, bias=False))
         self.layers.append(nn.BatchNorm2d(outf))
         self.layers = nn.Sequential(*self.layers)
@@ -39,7 +39,7 @@ class Bottleneck(nn.Module):
                 nn.Conv2d(previous, outf, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(outf)
             )
-        self.outlayer = nn.ReLU()
+        self.outlayer = nn.LeakyReLU(negative_slope=negative_slope)
 
     def forward(self, x):
         densepath = self.layers(x)
@@ -68,6 +68,7 @@ class DualPathNet(nn.Module):
         init_hidden = structure['initial']
         k = structure['kernel']
         stride = structure['stride']
+        negative_slope = structure['negative_slope']
         # initialization
         super(DualPathNet, self).__init__()
         self.prev = init_hidden
@@ -80,7 +81,7 @@ class DualPathNet(nn.Module):
         self.firstblock.append(nn.Conv2d(in_channels=num_feats, out_channels=init_hidden, padding=k//2, kernel_size=k, 
                                stride=1, bias=False))  # original paper uses stride=2, use 1 here because of small image size
         self.firstblock.append(nn.BatchNorm2d(num_features=init_hidden))
-        self.firstblock.append(nn.ReLU())
+        self.firstblock.append(nn.LeakyReLU(negative_slope=negative_slope))
 #        self.firstblock.append(nn.MaxPool2d(3))  # max pooling used in original paper, may not be needed
         self.firstblock = nn.Sequential(*self.firstblock)
                 
@@ -97,6 +98,7 @@ class DualPathNet(nn.Module):
         # fully connected layers
         last_out = out_sizes[-1] + (block_repeats[-1]+1)* incre_sizes[-1]
         self.fc_layers = nn.Linear(last_out, num_classes, bias=False)
+        self.lastsig = nn.Sigmoid()
     
     def conv_layer(self, first, last, increment, repeat, stride):
         strides = [stride] + [1] * (repeat - 1)
@@ -116,6 +118,7 @@ class DualPathNet(nn.Module):
         output = output.reshape(output.shape[0], output.shape[1])
         
         output = self.fc_layers(output)
+        output = self.lastsig(output)
 
         return output
     
@@ -130,7 +133,7 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
-def DPNmini(num_feats, num_classes, kernel=3, stride=2):
+def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2):
     structure = {}
     structure['ins'] = [96, 128]
     structure['outs'] = [256, 512]
@@ -139,6 +142,7 @@ def DPNmini(num_feats, num_classes, kernel=3, stride=2):
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride
+    structure['negative_slope'] = negative_slope
     
     return DualPathNet(num_feats, num_classes, structure)
 
