@@ -9,8 +9,10 @@ import torchvision
 from torchvision.utils import save_image
 from PIL import Image
 
+import logging
 import os
 #import sys
+import multiprocessing
 import numpy as np
 
 import discriminator as D
@@ -42,10 +44,10 @@ def train():
     train_path = os.path.join('..', 'real')  # real training set
     
     # hyperparameters
-    bsize = 4  # batch size
-#    nworkers = 8 # number of workers
+    bsize = 64  # batch size
+    nworkers = multiprocessing.cpu_count() # number of workers
     shuffle = True
-    epochs = 20
+    epochs = 200
     sample_interval = 100  # save 25 images every 100 batches
     device = torch.device('cpu')
     # tuning parameter
@@ -62,7 +64,7 @@ def train():
     
     # create dataloaders
     train_ds = ImageDataset(train_path)
-    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle)
+    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
     
     # create model
     gen = G.CNN(opt)
@@ -74,7 +76,7 @@ def train():
     
     batches_done = 0
     for epoch in range(epochs):
-        print('# ---- Epoch {}/{} ---- #'.format(epoch+1, epochs))
+        logger.info('# ---- Epoch {}/{} ---- #'.format(epoch+1, epochs))
               
         for i, (imgs, _) in enumerate(real_loader):
             # Configure input
@@ -122,14 +124,14 @@ def train():
                 g_loss.backward()
                 optimizer_G.step()
     
-                print(
+                logger.info(
                     "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
                     % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item())
                 )
                 if batches_done % sample_interval == 0:
                     save_image(fake_imgs.data, os.path.join('..', 'fakes', "{:d}.png".format(epoch+1)),
                                nrow=int(np.sqrt(bsize)), normalize=True)
-                    print('generated sample images saved to disk')
+                    logger.info('generated sample images saved to disk')
                 batches_done += n_critic
     return gen
 
@@ -158,7 +160,24 @@ def compute_gradient_penalty(D, real_samples, fake_samples):
     gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return gradient_penalty
 
-
+logger = logging.getLogger(__name__)
 #--- run main routine and prediction ---#
 if __name__ == '__main__':
+    logger.setLevel(logging.DEBUG)
+    # create console handler and set level to debug
+    ch = logging.FileHandler('train.log', mode='w')
+    ch.setLevel(logging.DEBUG)
+    # create formatter
+    formatter = logging.Formatter('%(levelname)s - %(message)s')
+    # add formatter to ch
+    ch.setFormatter(formatter)
+    # add ch to logger
+    logger.addHandler(ch)
+    
+    # create console handler and set level to debug
+    sysout = logging.StreamHandler()
+    sysout.setLevel(logging.DEBUG)
+    # add ch to logger
+    logger.addHandler(sysout)    
+    
     generator = train()
