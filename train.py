@@ -1,5 +1,6 @@
 import torch
 import torch.autograd as autograd
+import torch.multiprocessing as mp
 #import torch.nn as nn
 #import torch.nn.functional as F
 from torch.autograd import Variable
@@ -39,36 +40,18 @@ class ImageDataset(Dataset):
 
 
 # main routine for the project
-def train():
-    # file paths
-    train_path = os.path.join('..', 'real')  # real training set
-    
+def train(gen, dis, dataloader, opt):    
     # hyperparameters
-    bsize = 64  # batch size
-    nworkers = multiprocessing.cpu_count() # number of workers
-    shuffle = True
-    epochs = 200
+    epochs = 20
     sample_interval = 100  # save 25 images every 100 batches
     device = torch.device('cpu')
     # tuning parameter
     lambda_gp = 10
     n_critic = 5  # how many iterations to train discriminator before training generator
 #    clip_value = 0.01  # weight clipping, used in WGAN, not in WGAN-GP
-    # model parameter
-    opt = {'in_feat': 1, 'out_feat': 3, 'img_size': 4, 'scale_factor': 2}
-    real_feats = 3  # color channel count for real imgs
-    num_classes = 1  # discriminator output size, only outputs a validity score
     # optimizer parameter
     betas = (0, 0.9)
     lr = 0.0001  # from WGAN-GP paper
-    
-    # create dataloaders
-    train_ds = ImageDataset(train_path)
-    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
-    
-    # create model
-    gen = G.CNN(opt)
-    dis = D.DPNmini(real_feats, num_classes)
     
     # optimizers
     optimizer_G = torch.optim.Adam(gen.parameters(), lr=lr, betas=betas)
@@ -78,7 +61,7 @@ def train():
     for epoch in range(epochs):
         logger.info('# ---- Epoch {}/{} ---- #'.format(epoch+1, epochs))
               
-        for i, (imgs, _) in enumerate(real_loader):
+        for i, (imgs, _) in enumerate(dataloader):
             # Configure input
 #            real_imgs = Variable(imgs.type(Tensor))
             real_imgs = imgs.to(device)
@@ -133,7 +116,7 @@ def train():
                                nrow=5, normalize=True)
                     logger.info('generated sample images saved to disk')
                 batches_done += n_critic
-    return gen
+#    return gen
 
 
 # helper function for calculating GP in WGAN-GP
@@ -180,4 +163,33 @@ if __name__ == '__main__':
     # add ch to logger
     logger.addHandler(sysout)    
     
-    generator = train()
+    # generate data loader
+    bsize = 64  # batch size
+    nworkers = mp.cpu_count() # number of workers
+    shuffle = True
+    train_path = os.path.join('..', 'real')  # real training set
+    train_ds = ImageDataset(train_path)
+    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
+    
+    # generate model
+    opt = {'in_feat': 1, 'out_feat': 3, 'img_size': 4, 'scale_factor': 2}
+    real_feats = 3  # color channel count for real imgs
+    num_classes = 1  # discriminator output size, only outputs a validity score
+    gen = G.CNN(opt)
+    dis = D.DPNmini(real_feats, num_classes)
+    
+    gen.share_memory()
+    dis.share_memory()
+    
+    # train model using multiprocessing
+    logger.info('train in {} processes'.format(mp.cpu_count()))
+    processes = []
+    for i in range(mp.cpu_count()): # No. of processes
+        p = mp.Process(target=train, args=(gen, dis, real_loader, opt))
+        p.start()
+        processes.append(p)
+    for p in processes: 
+        p.join()
+    
+    # train model
+#    generator = train(gen, dis, real_loader, opt)
