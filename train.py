@@ -129,8 +129,8 @@ def train():
                     % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item())
                 )
                 if batches_done % sample_interval == 0:
-                    save_image(fake_imgs.data, os.path.join('..', 'fakes', "{:d}.png".format(epoch+1)),
-                               nrow=int(np.sqrt(bsize)), normalize=True)
+                    save_image(fake_imgs.data[:25], os.path.join('..', 'fakes', "{:d}.png".format(epoch+1)),
+                               nrow=5, normalize=True)
                     logger.info('generated sample images saved to disk')
                 batches_done += n_critic
     return gen
