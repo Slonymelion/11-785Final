@@ -70,7 +70,6 @@ class DualPathNet(nn.Module):
         stride = structure['stride']
         # initialization
         super(DualPathNet, self).__init__()
-        self.task = task  # identify which task to use
         self.prev = init_hidden
         
         # build network, input image size 32 by 32
@@ -115,9 +114,9 @@ class DualPathNet(nn.Module):
         # pooling layer is here
         output = F.avg_pool2d(output, [output.size(2), output.size(3)], stride=1)
         output = output.reshape(output.shape[0], output.shape[1])
-        if self.task == 'classify':
-            output = self.fc_layers(output)
-#        output = output/torch.norm(self.fc_layers.weight, dim=1)  # output normalization, not really needed
+        
+        output = self.fc_layers(output)
+
         return output
     
 
@@ -131,6 +130,19 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
+def DPNmini(num_feats, num_classes, kernel=3, stride=2):
+    structure = {}
+    structure['ins'] = [96, 128]
+    structure['outs'] = [256, 512]
+    structure['repeats'] = [2, 2, 2]
+    structure['increments'] = [16, 24]
+    structure['initial'] = 64
+    structure['kernel'] = kernel
+    structure['stride'] = stride
+    
+    return DualPathNet(num_feats, num_classes, structure)
+
+
 def DPN26(num_feats, num_classes, kernel=3, stride=2, task='classify'):
     structure = {}
     structure['ins'] = [96, 192, 384, 768]
