@@ -4,9 +4,9 @@ import torch.multiprocessing as mp
 #import torch.nn as nn
 #import torch.nn.functional as F
 from torch.autograd import Variable
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 #from torch.nn.modules.distance import CosineSimilarity
-import torchvision
+#import torchvision
 from torchvision.utils import save_image
 from PIL import Image
 
@@ -24,8 +24,9 @@ from ImageVoice import ImageVoice
 # main routine for the project
 def train(gen, dis, dataloader, opt):    
     # hyperparameters
-    epochs = 20
+    epochs = opt['epochs']
     sample_interval = 500  # save 25 images every 100 batches
+    latent_dim = opt['latent_dim'] if 'latent_dim' in opt else 100
     device = torch.device('cpu')
 #    device = torch.device('cuda')
     # tuning parameter
@@ -44,7 +45,8 @@ def train(gen, dis, dataloader, opt):
     for epoch in range(epochs):
         logger.info('# ---- Epoch {}/{} ---- #'.format(epoch+1, epochs))
               
-        for i, (imgs, _) in enumerate(dataloader):
+        for i, (imgs, sounds) in enumerate(dataloader):
+            print(sounds.size())
             # Configure input
 #            real_imgs = Variable(imgs.type(Tensor))
             real_imgs = imgs.to(device)
@@ -56,17 +58,17 @@ def train(gen, dis, dataloader, opt):
             optimizer_D.zero_grad()
     
             # Sample noise as generator input
-            z = Variable(Tensor(np.random.normal(0, 1, (imgs.shape[0], opt['in_feat'], opt['img_size'], opt['img_size']))))
+            z = Variable(Tensor(np.random.normal(0, 1, size=(imgs.shape[0], latent_dim, 1, 1))))
     
             # Generate a batch of images
-            fake_imgs = gen(z)
+            fake_imgs = gen(z, sounds)
     
             # Real images
-            real_validity = dis(real_imgs)
+            real_validity = dis(real_imgs, sounds)
             # Fake images
-            fake_validity = dis(fake_imgs)
+            fake_validity = dis(fake_imgs, sounds)
             # Gradient penalty
-            gradient_penalty = compute_gradient_penalty(dis, real_imgs.data, fake_imgs.data)
+            gradient_penalty = compute_gradient_penalty(dis, sounds, real_imgs.data, fake_imgs.data)
             # Adversarial loss
             d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
     
@@ -81,10 +83,10 @@ def train(gen, dis, dataloader, opt):
                 # -----------------
     
                 # Generate a batch of images
-                fake_imgs = gen(z)
+                fake_imgs = gen(z, sounds)
                 # Loss measures generator's ability to fool the dis
                 # Train on fake images
-                fake_validity = dis(fake_imgs)
+                fake_validity = dis(fake_imgs, sounds)
                 g_loss = -torch.mean(fake_validity)
     
                 g_loss.backward()
@@ -105,13 +107,13 @@ def train(gen, dis, dataloader, opt):
 # helper function for calculating GP in WGAN-GP
 #Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 Tensor = torch.FloatTensor
-def compute_gradient_penalty(D, real_samples, fake_samples):
+def compute_gradient_penalty(D, sounds, real_samples, fake_samples):
     """Calculates the gradient penalty loss for WGAN GP"""
     # Random weight term for interpolation between real and fake samples
     alpha = Tensor(np.random.random((real_samples.size(0), 1, 1, 1)))
     # Get random interpolation between real and fake samples
     interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
-    d_interpolates = D(interpolates)
+    d_interpolates = D(interpolates, sounds)
     fake = Variable(Tensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
     # Get gradient w.r.t. interpolates
     gradients = autograd.grad(
@@ -147,32 +149,21 @@ if __name__ == '__main__':
     logger.addHandler(sysout)    
     
     # generate data loader
-    bsize = 64  # batch size
+    bsize = 1  # batch size
     nworkers = mp.cpu_count() # number of workers
     shuffle = True
-    train_path = os.path.join('..', 'real')  # real training set
-    train_ds = ImageDataset(train_path)
-    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
+    train_path = ''  # real training set
+    train_ds = ImageVoice(train_path)
+#    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
+    real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle)
     
     # generate model
-    opt = {'in_feat': 1, 'out_feat': 3, 'img_size': 4, 'scale_factor': 2}
+    opt = {'in_feat': 1, 'out_feat': 3, 'latent_dim': 100, 'epochs': 1}
     real_feats = 3  # color channel count for real imgs
     num_classes = 1  # discriminator output size, only outputs a validity score
-    gen = G.CNN(opt)
-    dis = D.DPNmini(real_feats, num_classes)
-    
-    gen.share_memory()
-    dis.share_memory()
-    
-    # train model using multiprocessing
-    logger.info('train in {} processes'.format(mp.cpu_count()))
-    processes = []
-    for i in range(mp.cpu_count()): # No. of processes
-        p = mp.Process(target=train, args=(gen, dis, real_loader, opt))
-        p.start()
-        processes.append(p)
-    for p in processes: 
-        p.join()
+    soundnet = G.SoundCNN(opt)
+    gen = G.ConditionalGen(soundnet, opt)
+    dis = D.DPNmini(real_feats, num_classes, SoundNet=soundnet)
     
     # train model
-#    generator = train(gen, dis, real_loader, opt)
+    generator = train(gen, dis, real_loader, opt)

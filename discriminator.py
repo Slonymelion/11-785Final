@@ -117,9 +117,7 @@ class DualPathNet(nn.Module):
         if self.soundnet:
             sound = self.soundnet(sound)
             sound = sound.unsqueeze(3).repeat((1, 1, x.size()[-2], x.size()[-1]))
-            print(x.size(), sound.size())
             x = torch.cat([x, sound], dim=1)
-            print(x.size())
 #        output = self.padding(x)
         output = self.firstblock(x)
         output = self.layers(output)
