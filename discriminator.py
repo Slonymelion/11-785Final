@@ -71,6 +71,8 @@ class DualPathNet(nn.Module):
         negative_slope = structure['negative_slope']
         # initialization
         super(DualPathNet, self).__init__()
+        self.soundnet = structure['soundnet']
+        sound_dim = structure['soundnet_out']  # input dimension from sound net
         self.prev = init_hidden
         
         # build network, input image size 32 by 32
@@ -97,7 +99,7 @@ class DualPathNet(nn.Module):
         
         # fully connected layers
         last_out = out_sizes[-1] + (block_repeats[-1]+1)* incre_sizes[-1]
-        self.fc_layers = nn.Linear(last_out, num_classes, bias=False)
+        self.fc_layers = nn.Linear(last_out+sound_dim, num_classes, bias=False)
         self.lastsig = nn.Sigmoid()
     
     def conv_layer(self, first, last, increment, repeat, stride):
@@ -108,7 +110,7 @@ class DualPathNet(nn.Module):
             self.prev = last + (i+2) * increment
         return block
         
-    def forward(self, x, evalMode=False):
+    def forward(self, x, sound):
 #        output = self.padding(x)
         output = self.firstblock(x)
         output = self.layers(output)
@@ -117,6 +119,8 @@ class DualPathNet(nn.Module):
         output = F.avg_pool2d(output, [output.size(2), output.size(3)], stride=1)
         output = output.reshape(output.shape[0], output.shape[1])
         
+        outsound = self.soundnet(sound).squeeze(2)
+        output = torch.cat([output, outsound], dim=1)
         output = self.fc_layers(output)
         output = self.lastsig(output)
 
@@ -133,8 +137,10 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
-def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2):
+def DPNmini(SoundNet, num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2):
     structure = {}
+    structure['soundnet'] = SoundNet
+    structure['soundnet_out'] = 64
     structure['ins'] = [96, 128]
     structure['outs'] = [256, 512]
     structure['repeats'] = [2, 2, 2]
@@ -147,8 +153,10 @@ def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2):
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26(num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN26(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
     structure = {}
+    structure['soundnet'] = SoundNet
+    structure['soundnet_out'] = 64
     structure['ins'] = [96, 192, 384, 768]
     structure['outs'] = [256, 512, 1024, 2048]
     structure['repeats'] = [2, 2, 2, 2]
@@ -160,8 +168,10 @@ def DPN26(num_feats, num_classes, kernel=3, stride=2, task='classify'):
     return DualPathNet(num_feats, num_classes, structure, task=task)
 
 
-def DPN26small(num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN26small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
     structure = {}
+    structure['soundnet'] = SoundNet
+    structure['soundnet_out'] = 64
     structure['ins'] = [96, 384, 768]
     structure['outs'] = [256, 1024, 2048]
     structure['repeats'] = [2, 2, 2]
@@ -173,8 +183,10 @@ def DPN26small(num_feats, num_classes, kernel=3, stride=2, task='classify'):
     return DualPathNet(num_feats, num_classes, structure, task=task)
 
 
-def DPN50(num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN50(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
     structure = {}
+    structure['soundnet'] = SoundNet
+    structure['soundnet_out'] = 64
     structure['ins'] = [96, 192, 384, 768]
     structure['outs'] = [256, 512, 1024, 2048]
     structure['repeats'] = [3, 4, 6, 3]
@@ -186,25 +198,14 @@ def DPN50(num_feats, num_classes, kernel=3, stride=2, task='classify'):
     return DualPathNet(num_feats, num_classes, structure, task=task)
 
 
-def DPN50small(num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN50small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
     structure = {}
+    structure['soundnet'] = SoundNet
+    structure['soundnet_out'] = 64
     structure['ins'] = [192, 384, 768]
     structure['outs'] = [512, 1024, 2048]
     structure['repeats'] = [3, 6, 4]
     structure['increments'] = [32, 24, 128]
-    structure['initial'] = 64
-    structure['kernel'] = kernel
-    structure['stride'] = stride
-    
-    return DualPathNet(num_feats, num_classes, structure, task=task)
-
-
-def DPN92(num_feats, num_classes, kernel=3, stride=2, task='classify'):
-    structure = {}
-    structure['ins'] = [96, 192, 384, 768]
-    structure['outs'] = [256, 512, 1024, 2048]
-    structure['repeats'] = [3, 4, 20, 3]
-    structure['increments'] = [16, 32, 24, 128]
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride

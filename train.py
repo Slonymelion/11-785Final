@@ -13,38 +13,21 @@ from PIL import Image
 import logging
 import os
 #import sys
-import multiprocessing
 import numpy as np
 
 import discriminator as D
 import generator as G
 
-
-# image dataset class exclusively for test
-class ImageDataset(Dataset):
-    """
-    return (image tensor, image file name) tuple
-    """
-    def __init__(self, path):
-        file_list = os.listdir(path)
-        self.file_list = [os.path.join(path, x) for x in file_list]
-
-    def __len__(self):
-        return len(self.file_list)
-
-    def __getitem__(self, index):
-        img = Image.open(self.file_list[index])
-        img = torchvision.transforms.ToTensor()(img)
-        imgname = os.path.split(self.file_list[index])[-1]
-        return img, imgname
+from ImageVoice import ImageVoice
 
 
 # main routine for the project
 def train(gen, dis, dataloader, opt):    
     # hyperparameters
     epochs = 20
-    sample_interval = 100  # save 25 images every 100 batches
+    sample_interval = 500  # save 25 images every 100 batches
     device = torch.device('cpu')
+#    device = torch.device('cuda')
     # tuning parameter
     lambda_gp = 10
     n_critic = 5  # how many iterations to train discriminator before training generator

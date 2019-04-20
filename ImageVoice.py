@@ -9,9 +9,10 @@ import torch
 
 
 class ImageVoice(TensorDataset):
-  def __init__(self):
-    data_path = os.environ['data_path']
-    topdir = data_path + "/cropFaces"
+  def __init__(self, data_path='.'):
+#    data_path = os.environ['data_path']
+    topdir = os.path.join(data_path, 'cropFaces')
+#    topdir = data_path + "/cropFaces"
     self.pics = []
     
     name_count = 0

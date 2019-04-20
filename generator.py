@@ -2,6 +2,7 @@
 """
 11-785 - Final Project - Baseline model based on WGAN-GP
 """
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -65,5 +66,96 @@ class CNN(nn.Module):
         img = img.view(img.shape[0], -1, self.final_size, self.final_size)
         img = self.tanh(img)
         return img
+
+
+class SoundCNN(nn.Module):
+    """
+    Simple embedding network for processing sound data
+    """
+    def __init__(self, opt):        
+        super(SoundCNN, self).__init__()
+        self.opt = opt
+        kernel_size = 3
+        stride = 2
+        padding = kernel_size // 2
+        in_channels = 64  # input sound frequency channels
+        out_channels = [in_channels, 256, 384, 576, 64]
+        relu_slope = 0.2
+        # build up network
+        self.layers = []
+        for i in range(len(out_channels)-2):
+            self.layers.extend([
+                    nn.Conv1d(out_channels[i], out_channels[i+1], kernel_size=kernel_size,
+                               padding=padding, stride=stride),
+                    nn.BatchNorm1d(out_channels[i+1]),
+                    nn.LeakyReLU(negative_slope=relu_slope)
+                    ])
+        self.layers = nn.Sequential(*self.layers) 
+        # last convoluation layer
+        self.conv = nn.Conv1d(out_channels[-2], out_channels[-1],
+                              kernel_size=kernel_size, padding=padding, stride=stride)
+        self.avgpool = nn.AvgPool1d(out_channels[-1])       
+    
+    def forward(self, sound):
+        x = self.layers(sound.transpose(1,2))
+        x = self.conv(x)
+        out = self.avgpool(x)
+        return out
+
+
+class ConditionalGen(nn.Module):
+    """
+    Generator that takes in both latent variable and sound features
+    """
+    def __init__(self, SoundNet, opt):        
+        super(ConditionalGen, self).__init__()
+        self.opt = opt
+        
+        self.soundnet = SoundNet
+        
+        in_feat = 164  # 100 dimension latent variable + 64 dimensional sound
+        dim = 128 # output image dimension
+        ks = 4  # kernel size
+        s = 1   # stride
+        p = 0   # padding
+        ns = 0.2 # negative slope for LeakyRelu
+        
+        self.convfirst = nn.Conv2d(in_channels=in_feat, out_channels=256, kernel_size=1, stride=1, padding=0)
+        self.layers = []
+        self.layers.extend([
+                nn.ConvTranspose2d(in_feat, dim*4, kernel_size=ks, stride=s, padding=p),
+                nn.BatchNorm2d(dim*4),
+                nn.LeakyReLU(negative_slope=ns)
+                ])
+        self.layers.extend([
+                nn.ConvTranspose2d(dim*4, dim*4, kernel_size=ks, stride=4, padding=3),
+                nn.BatchNorm2d(dim*4),
+                nn.LeakyReLU(negative_slope=ns)
+                ])
+        self.layers.extend([
+                nn.ConvTranspose2d(dim*4, dim*2, kernel_size=ks, stride=4, padding=4),
+                nn.BatchNorm2d(dim*2),
+                nn.LeakyReLU(negative_slope=ns)
+                ])
+        self.layers.extend([
+                nn.ConvTranspose2d(dim*2, dim, kernel_size=ks, stride=2, padding=1),
+                nn.BatchNorm2d(dim),
+                nn.LeakyReLU(negative_slope=ns)
+                ])
+        self.layers = nn.Sequential(*self.layers)
+        # add a final transpose convoluation layer to generate 3 channels
+        self.finallayer = nn.ConvTranspose2d(dim, 3, kernel_size=ks, stride=2, padding=1)
+        
+        self.finaltanh = nn.Tanh()
+    
+    def forward(self, z, sound):
+        ins = self.soundnet(sound)
+        ins = torch.cat([z, ins.unsqueeze(3)], dim=1)
+        img = self.layers(ins)
+        img = self.finallayer(img)
+        out = self.finaltanh(img)
+
+        return out
+    
 
 
