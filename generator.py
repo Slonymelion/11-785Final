@@ -107,11 +107,11 @@ class ConditionalGen(nn.Module):
     """
     Generator that takes in both latent variable and sound features
     """
-    def __init__(self, SoundNet, opt):        
+    def __init__(self, opt):        
         super(ConditionalGen, self).__init__()
         self.opt = opt
         
-        self.soundnet = SoundNet
+        self.soundnet = opt['soundnet']
         
         in_feat = 164  # 100 dimension latent variable + 64 dimensional sound
         dim = 128 # output image dimension

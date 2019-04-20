@@ -72,7 +72,10 @@ class DualPathNet(nn.Module):
         # initialization
         super(DualPathNet, self).__init__()
         self.soundnet = structure['soundnet']
-        sound_dim = structure['soundnet_out']  # input dimension from sound net
+        if self.soundnet:
+            sound_dim = structure['soundnet_out']  # input dimension from sound net
+        else:
+            sound_dim = 0
         self.prev = init_hidden
         
         # build network, input image size 32 by 32
@@ -80,7 +83,7 @@ class DualPathNet(nn.Module):
         
         # first block is fully conv2d, max pooling is removed since input image is already small
         self.firstblock = []
-        self.firstblock.append(nn.Conv2d(in_channels=num_feats, out_channels=init_hidden, padding=k//2, kernel_size=k, 
+        self.firstblock.append(nn.Conv2d(in_channels=num_feats+sound_dim, out_channels=init_hidden, padding=k//2, kernel_size=k, 
                                stride=1, bias=False))  # original paper uses stride=2, use 1 here because of small image size
         self.firstblock.append(nn.BatchNorm2d(num_features=init_hidden))
         self.firstblock.append(nn.LeakyReLU(negative_slope=negative_slope))
@@ -99,7 +102,7 @@ class DualPathNet(nn.Module):
         
         # fully connected layers
         last_out = out_sizes[-1] + (block_repeats[-1]+1)* incre_sizes[-1]
-        self.fc_layers = nn.Linear(last_out+sound_dim, num_classes, bias=False)
+        self.fc_layers = nn.Linear(last_out, num_classes, bias=False)
         self.lastsig = nn.Sigmoid()
     
     def conv_layer(self, first, last, increment, repeat, stride):
@@ -110,7 +113,13 @@ class DualPathNet(nn.Module):
             self.prev = last + (i+2) * increment
         return block
         
-    def forward(self, x, sound):
+    def forward(self, x, sound=None):
+        if self.soundnet:
+            sound = self.soundnet(sound)
+            sound = sound.unsqueeze(3).repeat((1, 1, x.size()[-2], x.size()[-1]))
+            print(x.size(), sound.size())
+            x = torch.cat([x, sound], dim=1)
+            print(x.size())
 #        output = self.padding(x)
         output = self.firstblock(x)
         output = self.layers(output)
@@ -119,8 +128,6 @@ class DualPathNet(nn.Module):
         output = F.avg_pool2d(output, [output.size(2), output.size(3)], stride=1)
         output = output.reshape(output.shape[0], output.shape[1])
         
-        outsound = self.soundnet(sound).squeeze(2)
-        output = torch.cat([output, outsound], dim=1)
         output = self.fc_layers(output)
         output = self.lastsig(output)
 
@@ -137,7 +144,7 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
-def DPNmini(SoundNet, num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2):
+def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -153,7 +160,7 @@ def DPNmini(SoundNet, num_feats, num_classes, kernel=3, stride=2, negative_slope
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN26(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -165,10 +172,10 @@ def DPN26(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify')
     structure['kernel'] = kernel
     structure['stride'] = stride
     
-    return DualPathNet(num_feats, num_classes, structure, task=task)
+    return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN26small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -180,10 +187,10 @@ def DPN26small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='class
     structure['kernel'] = kernel
     structure['stride'] = stride
     
-    return DualPathNet(num_feats, num_classes, structure, task=task)
+    return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN50(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -195,10 +202,10 @@ def DPN50(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify')
     structure['kernel'] = kernel
     structure['stride'] = stride
     
-    return DualPathNet(num_feats, num_classes, structure, task=task)
+    return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='classify'):
+def DPN50small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -210,7 +217,7 @@ def DPN50small(SoundNet, num_feats, num_classes, kernel=3, stride=2, task='class
     structure['kernel'] = kernel
     structure['stride'] = stride
     
-    return DualPathNet(num_feats, num_classes, structure, task=task)
+    return DualPathNet(num_feats, num_classes, structure)
 
 
 # function to remove '._' files
