@@ -16,18 +16,17 @@ class ImageVoice(TensorDataset):
     self.pics = []
     
     name_count = 0
-    for name in os.listdir(topdir):
+    for name in sorted(os.listdir(topdir)):
       name = topdir + '/' + name
       if not os.path.isdir(name):
         continue
       name_count += 1
-      picsdir = str(name) + '/1.6/'
-      voices = data_path + './mbk_vad/id' + str(10000 + name_count) + '/'
-
+      picsdir = os.path.join(name, '1.6')
+      voices = os.path.join(data_path, 'mbk_vad', 'id'+str(10000+name_count))
 
       for picdir in os.listdir(picsdir):
-        voicedir = voices + picdir
-        picdir = picsdir + picdir
+        voicedir = os.path.join(voices, picdir)
+        picdir = os.path.join(picsdir, picdir)
         if not os.path.isdir(picdir):
           continue
         if not os.path.isdir(voicedir):

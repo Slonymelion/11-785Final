@@ -103,7 +103,7 @@ class DualPathNet(nn.Module):
         # fully connected layers
         last_out = out_sizes[-1] + (block_repeats[-1]+1)* incre_sizes[-1]
         self.fc_layers = nn.Linear(last_out, num_classes, bias=False)
-        self.lastsig = nn.Sigmoid()
+        #self.lastsig = nn.Sigmoid()
     
     def conv_layer(self, first, last, increment, repeat, stride):
         strides = [stride] + [1] * (repeat - 1)
@@ -127,7 +127,7 @@ class DualPathNet(nn.Module):
         output = output.reshape(output.shape[0], output.shape[1])
         
         output = self.fc_layers(output)
-        output = self.lastsig(output)
+        #output = self.lastsig(output)
 
         return output
     
