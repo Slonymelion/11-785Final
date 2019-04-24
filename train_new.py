@@ -33,6 +33,7 @@ def train(gen, dis, dataloader, opt):
     latent_dim = opt['latent_dim'] if 'latent_dim' in opt else 100
     do_penalty = opt['do_gradient_penalty']
     feature_match_ratio = opt['feature_match_ratio']
+    image_match_ratio = opt['image_match_ratio']
     do_label_smoothing = opt['label_smoothing']
     sample_interval = 300  # save 25 images every 100 batches
     save_interval = sample_interval * 2  # save model every 1000 batches
@@ -47,7 +48,7 @@ def train(gen, dis, dataloader, opt):
     lr = 0.0001  # from WGAN-GP paper
     
     # optimizers & losses
-    optimizer_G = torch.optim.Adam(gen.parameters(), lr=lr*10, betas=betas)
+    optimizer_G = torch.optim.Adam(gen.parameters(), lr=lr*n_critic*2, betas=betas)
 #    optimizer_G = torch.optim.SGD(gen.parameters(), lr=0.01, momentum=0.9)
     optimizer_D = torch.optim.Adam(dis.parameters(), lr=lr, betas=betas)
 #    optimizer_D = torch.optim.SGD(dis.parameters(), lr=0.0001)
@@ -79,8 +80,8 @@ def train(gen, dis, dataloader, opt):
         logger.info('# ---- Epoch {}/{} ---- #'.format(epoch+1, epochs))
         
         if (epoch+1) in annealing_schedule:
-            optimizer_G.param_groups[0]['lr'] *= 10
-            optimizer_D.param_groups[0]['lr'] *= 10
+            optimizer_G.param_groups[0]['lr'] /= 10
+            optimizer_D.param_groups[0]['lr'] /= 10
             logger.info(' learning rate decreased by factor of 10 ')
             
         for i, (imgs, sounds) in enumerate(dataloader):
@@ -97,7 +98,7 @@ def train(gen, dis, dataloader, opt):
                 valid = Variable(valid, requires_grad=False)
                 fake = torch.rand((imgs.shape[0], 1)) * 0.1
                 fake = Variable(fake, requires_grad=False)
-                valid_gen = torch.ones_like(imgs)
+                valid_gen = torch.ones((imgs.shape[0], 1))
                 valid_gen = Variable(valid_gen, requires_grad=False)
             else:
                 valid = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(1.0), requires_grad=False)
@@ -144,7 +145,8 @@ def train(gen, dis, dataloader, opt):
                 g_loss = adversarial_loss(fake_validity, valid_gen)
     #            g_loss = -torch.mean(fake_validity)
                 g_feature_loss = adversarial_loss(fake_latent, real_latent.detach())
-                g_loss += feature_match_ratio * g_feature_loss
+                g_image_loss = adversarial_loss(real_imgs, fake_imgs)
+                g_loss += feature_match_ratio * g_feature_loss + image_match_ratio*g_image_loss
     
                 
                 optimizer_G.zero_grad()
@@ -152,11 +154,11 @@ def train(gen, dis, dataloader, opt):
                 optimizer_G.step()  
     
                 logger.info(
-                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f]\n"
-                    % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item(), g_feature_loss.item())
+                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f] [G image loss: %f]"
+                    % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item(), g_feature_loss.item(), g_image_loss.item())
                 )
                 logger.info(
-                    "\t[D first grad: %f] [D final grad: %f] [G first grad: %f] [G final grad: %f] \n"
+                    "\t[D first grad: %f] [D final grad: %f] [G first grad: %f] [G final grad: %f] "
                     % (
                             torch.mean(torch.abs(dis.firstblock[0].weight.grad)).item(),
                             torch.mean(torch.abs(dis.fc_layers.weight.grad)).item(),
@@ -169,14 +171,14 @@ def train(gen, dis, dataloader, opt):
                                nrow=5, normalize=True)
                     save_image(fake_imgs.data[:25], os.path.join('..', 'fakes', "{:d}.png".format(batches_done)),
                                nrow=5, normalize=True)
-                    logger.info('generated sample images saved to disk as {:d}.png\n'.format(batches_done))
+                    logger.info('generated sample images saved to disk as {:d}.png'.format(batches_done))
                 if batches_done % save_interval == 0:
-                    dis_save_file = 'discriminator_{:d}\n'.format(batches_done)
-                    gen_save_file = 'generator_{:d}\n'.format(batches_done)
+                    dis_save_file = 'discriminator_{:d}'.format(batches_done)
+                    gen_save_file = 'generator_{:d}'.format(batches_done)
                     torch.save(gen.state_dict(), os.path.join('experiments', opt['run_id'], gen_save_file))
                     logger.info('generator model saved at {:d}'.format(batches_done))
                     torch.save(dis.state_dict(), os.path.join('experiments', opt['run_id'], dis_save_file))
-                    logger.info('discriminator model saved at {:d}\n'.format(batches_done))
+                    logger.info('discriminator model saved at {:d}'.format(batches_done))
                 batches_done += n_critic
 #    return gen
                 
@@ -262,10 +264,11 @@ if __name__ == '__main__':
            'latent_dim': 100, 
            'epochs': 20,
            'annealing_schedule':[5, 10, 15, 18, 20], 
-           'do_gradient_penalty': False,
+           'do_gradient_penalty': True,
            'n_critic':3, 
-           'lambda_gp': 10, 
+           'lambda_gp': 1, 
            'feature_match_ratio':10,
+           'image_match_ratio':1,
            'label_smoothing': True,
            'run_id': run_id, 
            'warm_run_id': None, 

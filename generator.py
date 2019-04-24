@@ -156,6 +156,7 @@ class ConditionalGen(nn.Module):
         img = self.layers(ins)
         img = self.finallayer(img)
         out = self.finaltanh(img)
+        out = (out+1)/2
 
         return out
     
