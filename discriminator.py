@@ -142,7 +142,7 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
-def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
+def DPNmini(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -158,7 +158,7 @@ def DPNmini(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, Soun
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN26(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -169,11 +169,12 @@ def DPN26(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundN
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride
+    structure['negative_slope'] = negative_slope
     
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN26small(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -184,11 +185,12 @@ def DPN26small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, S
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride
+    structure['negative_slope'] = negative_slope
     
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN50(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -199,11 +201,12 @@ def DPN50(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundN
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride
+    structure['negative_slope'] = negative_slope
     
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN50small(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
     structure['soundnet_out'] = 64
@@ -214,6 +217,7 @@ def DPN50small(num_feats, num_classes, kernel=3, stride=2, negative_slope=0.2, S
     structure['initial'] = 64
     structure['kernel'] = kernel
     structure['stride'] = stride
+    structure['negative_slope'] = negative_slope
     
     return DualPathNet(num_feats, num_classes, structure)
 
