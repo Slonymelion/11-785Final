@@ -97,10 +97,14 @@ def train(gen, dis, dataloader, opt):
                 valid = Variable(valid, requires_grad=False)
                 fake = torch.rand((imgs.shape[0], 1)) * 0.1
                 fake = Variable(fake, requires_grad=False)
+                valid_gen = torch.ones_like(imgs)
+                valid_gen = Variable(valid_gen, requires_grad=False)
             else:
                 valid = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(1.0), requires_grad=False)
+                valid_gen = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(1.0), requires_grad=False)
                 fake = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(0.0), requires_grad=False)
-            valid, fake = valid.to(device), fake.to(device)
+                
+            valid, fake, valid_gen = valid.to(device), fake.to(device), valid_gen.to(device)
 
             # Real images
             real_validity, real_latent = dis(real_imgs, sounds)
@@ -137,7 +141,7 @@ def train(gen, dis, dataloader, opt):
                 #  Train Generator
                 # -----------------
                 
-                g_loss = adversarial_loss(fake_validity, valid)
+                g_loss = adversarial_loss(fake_validity, valid_gen)
     #            g_loss = -torch.mean(fake_validity)
                 g_feature_loss = adversarial_loss(fake_latent, real_latent.detach())
                 g_loss += feature_match_ratio * g_feature_loss
@@ -148,22 +152,31 @@ def train(gen, dis, dataloader, opt):
                 optimizer_G.step()  
     
                 logger.info(
-                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f]"
+                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f]\n"
                     % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item(), g_feature_loss.item())
+                )
+                logger.info(
+                    "\t[D first grad: %f] [D final grad: %f] [G first grad: %f] [G final grad: %f] \n"
+                    % (
+                            torch.mean(torch.abs(dis.firstblock[0].weight.grad)).item(),
+                            torch.mean(torch.abs(dis.fc_layers.weight.grad)).item(),
+                            torch.mean(torch.abs(gen.layers[0].weight.grad)).item(), 
+                            torch.mean(torch.abs(gen.finallayer.weight.grad)).item()
+                            )
                 )
                 if batches_done % sample_interval == 0:
                     save_image(real_imgs.data[:25], os.path.join('..', 'reals', "{:d}.png".format(batches_done)),
                                nrow=5, normalize=True)
                     save_image(fake_imgs.data[:25], os.path.join('..', 'fakes', "{:d}.png".format(batches_done)),
                                nrow=5, normalize=True)
-                    logger.info('generated sample images saved to disk as {:d}.png'.format(batches_done))
+                    logger.info('generated sample images saved to disk as {:d}.png\n'.format(batches_done))
                 if batches_done % save_interval == 0:
-                    dis_save_file = 'discriminator_{:d}'.format(batches_done)
-                    gen_save_file = 'generator_{:d}'.format(batches_done)
+                    dis_save_file = 'discriminator_{:d}\n'.format(batches_done)
+                    gen_save_file = 'generator_{:d}\n'.format(batches_done)
                     torch.save(gen.state_dict(), os.path.join('experiments', opt['run_id'], gen_save_file))
                     logger.info('generator model saved at {:d}'.format(batches_done))
                     torch.save(dis.state_dict(), os.path.join('experiments', opt['run_id'], dis_save_file))
-                    logger.info('discriminator model saved at {:d}'.format(batches_done))
+                    logger.info('discriminator model saved at {:d}\n'.format(batches_done))
                 batches_done += n_critic
 #    return gen
                 
@@ -249,7 +262,7 @@ if __name__ == '__main__':
            'latent_dim': 100, 
            'epochs': 20,
            'annealing_schedule':[5, 10, 15, 18, 20], 
-           'do_gradient_penalty': True,
+           'do_gradient_penalty': False,
            'n_critic':3, 
            'lambda_gp': 10, 
            'feature_match_ratio':10,
@@ -263,7 +276,7 @@ if __name__ == '__main__':
     num_classes = 1  # discriminator output size, only outputs a validity score
     soundnet = G.SoundCNN(opt)
     gen = G.CGen(opt, SoundNet=soundnet)
-    dis = D.DPNmini(real_feats, num_classes, SoundNet=soundnet)
+    dis = D.DPNmini(real_feats, num_classes, kernel=5, SoundNet=soundnet)
     
     # train model
     generator = train(gen, dis, real_loader, opt)
