@@ -107,20 +107,19 @@ class ConditionalGen(nn.Module):
     """
     Generator that takes in both latent variable and sound features
     """
-    def __init__(self, SoundNet, opt):        
+    def __init__(self, opt, SoundNet=None):        
         super(ConditionalGen, self).__init__()
         self.opt = opt
         
         self.soundnet = SoundNet
         
-        in_feat = 164  # 100 dimension latent variable + 64 dimensional sound
+        in_feat = 164 if self.soundnet else 100  # 100 dimension latent variable + 64 dimensional sound
         dim = 128 # output image dimension
         ks = 4  # kernel size
         s = 1   # stride
         p = 0   # padding
         ns = 0.2 # negative slope for LeakyRelu
         
-        self.convfirst = nn.Conv2d(in_channels=in_feat, out_channels=256, kernel_size=1, stride=1, padding=0)
         self.layers = []
         self.layers.extend([
                 nn.ConvTranspose2d(in_feat, dim*4, kernel_size=ks, stride=s, padding=p),
@@ -148,14 +147,14 @@ class ConditionalGen(nn.Module):
         
         self.finaltanh = nn.Tanh()
     
-    def forward(self, z, sound):
-        ins = self.soundnet(sound)
-        ins = torch.cat([z, ins.unsqueeze(3)], dim=1)
+    def forward(self, z, sound=None):
+        if sound is not None and self.soundnet is not None:
+            ins = self.soundnet(sound)
+            ins = torch.cat([z, ins.unsqueeze(3)], dim=1)
+        else:
+            ins = z
         img = self.layers(ins)
         img = self.finallayer(img)
         out = self.finaltanh(img)
 
         return out
-    
-
-

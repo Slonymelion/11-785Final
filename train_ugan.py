@@ -4,12 +4,13 @@ import torch.multiprocessing as mp
 #import torch.nn as nn
 #import torch.nn.functional as F
 from torch.autograd import Variable
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
 #from torch.nn.modules.distance import CosineSimilarity
 #import torchvision
 from torchvision.utils import save_image
 #from PIL import Image
 
+import copy
 import logging
 import os
 #import sys
@@ -23,7 +24,7 @@ from ImageVoice import ImageVoice
 
 
 # main routine for the project
-def train(gen, dis, dataloader, opt):    
+def train(gen, dis, dataloader, dataloader_unroll, opt):    
     # hyperparameters
     warm_id = opt['warm_model_id']
     epochs = opt['epochs']
@@ -33,6 +34,7 @@ def train(gen, dis, dataloader, opt):
     latent_dim = opt['latent_dim'] if 'latent_dim' in opt else 100
     do_penalty = opt['do_gradient_penalty']
     feature_match_ratio = opt['feature_match_ratio']
+    unroll_step = max(opt['unroll_step'], 1)
     sample_interval = 300  # save 25 images every 100 batches
     save_interval = sample_interval * 2  # save model every 1000 batches
     
@@ -95,9 +97,6 @@ def train(gen, dis, dataloader, opt):
             fake = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(0.0), requires_grad=False)
             valid, fake = valid.to(device), fake.to(device)
 
-            # Real images
-            real_validity, real_latent = dis(real_imgs, sounds)
-
             # Generate a batch of images
             fake_imgs = gen(z, sounds)
             
@@ -105,8 +104,46 @@ def train(gen, dis, dataloader, opt):
             # Train on fake images
             fake_validity, fake_latent = dis(fake_imgs, sounds)
             
+            # Real images
+            real_validity, real_latent = dis(real_imgs, sounds)
+            # Update discriminator for 1 step
+            optimizer_D.zero_grad()
+            # Gradient penalty
+            if do_penalty:
+                gradient_penalty = compute_gradient_penalty(dis, sounds, real_imgs.data, fake_imgs.data)
+            else:
+                gradient_penalty = 0
+            # Adversarial loss
+#                d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
+            d_loss = (adversarial_loss(real_validity, valid) + adversarial_loss(fake_validity, fake) )/2 + lambda_gp * gradient_penalty
+            
+            d_loss.backward()
+            optimizer_D.step()
+            
+            # Unroll for unroll_step
+            # save a copy of the discriminator
+            dis_copy = copy.deepcopy(dis)
+            
+            step = 0
+            for (imgs, sounds) in dataloader_unroll:
+                optimizer_D.zero_grad()
+                # Gradient penalty
+                if do_penalty:
+                    gradient_penalty = compute_gradient_penalty(dis, sounds, real_imgs.data, fake_imgs.data)
+                else:
+                    gradient_penalty = 0
+                # Adversarial loss
+    #                d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
+                d_loss = (adversarial_loss(real_validity, valid) + adversarial_loss(fake_validity, fake) )/2 + lambda_gp * gradient_penalty
+                
+                d_loss.backward(create_graph=True)
+                optimizer_D.step()
+                step += 1
+                if step >= unroll_step:
+                    break
+                
             # -----------------
-            #  Train Generator
+            #  Train Generator after unrolling
             # -----------------
             
             g_loss = adversarial_loss(fake_validity, valid)
@@ -114,32 +151,14 @@ def train(gen, dis, dataloader, opt):
             g_feature_loss = adversarial_loss(fake_latent, real_latent.detach())
             g_loss += feature_match_ratio * g_feature_loss
 
-            
             optimizer_G.zero_grad()
             g_loss.backward()
-            optimizer_G.step()  
-    
-            # Train the dis every n_critic steps
-            if (i+1) % n_critic == 0:
-                # ---------------------
-                #  Train Discriminator
-                # ---------------------
-        
-                # Fake images
-                fake_validity, fake_latent = dis(fake_imgs.detach(), sounds)
-                # Gradient penalty
-                if do_penalty:
-                    gradient_penalty = compute_gradient_penalty(dis, sounds, real_imgs.data, fake_imgs.data)
-                else:
-                    gradient_penalty = 0
-                # Adversarial loss
-#                d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
-                d_loss = (adversarial_loss(real_validity, valid) + adversarial_loss(fake_validity, fake) )/2 + lambda_gp * gradient_penalty
+            optimizer_G.step()
                 
-                optimizer_D.zero_grad()
-                d_loss.backward()
-                optimizer_D.step()
-    
+            # Recover old discriminator
+            dis.load_state_dict(dis_copy.state_dict())
+            
+            if (i+1) % unroll_step == 0:
                 logger.info(
                     "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f]"
                     % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item(), g_feature_loss.item())
@@ -157,7 +176,7 @@ def train(gen, dis, dataloader, opt):
                     logger.info('generator model saved at {:d}'.format(batches_done))
                     torch.save(dis.state_dict(), os.path.join('experiments', opt['run_id'], dis_save_file))
                     logger.info('discriminator model saved at {:d}'.format(batches_done))
-                batches_done += n_critic
+                batches_done += unroll_step
 #    return gen
                 
 
@@ -236,6 +255,8 @@ if __name__ == '__main__':
     print(len(train_ds), bsize, nworkers)
     real_loader = DataLoader(train_ds, batch_size=bsize, shuffle=shuffle, num_workers=nworkers)
     
+    real_loader_unroll = DataLoader(train_ds, num_workers=nworkers, batch_sampler=RandomSampler(train_ds, replacement=True, num_samples=bsize))
+    
     # generate model
     opt = {'in_feat': 1, 
            'out_feat': 3, 
@@ -244,6 +265,7 @@ if __name__ == '__main__':
            'annealing_schedule':[5, 10, 15, 18, 20], 
            'do_gradient_penalty': True,
            'n_critic':5, 
+           'unroll_step':10,  # for U-Gan
            'lambda_gp': 0.1, 
            'feature_match_ratio':1,
            'run_id': run_id, 
@@ -256,7 +278,7 @@ if __name__ == '__main__':
 #    soundnet = G.SoundCNN(opt)
     soundnet = None
     gen = G.ConditionalGen(opt, SoundNet=soundnet)
-    dis = D.DPNmini(real_feats, num_classes, SoundNet=None)
+    dis = D.DPN26small(real_feats, num_classes, SoundNet=None)
     
     # train model
-    generator = train(gen, dis, real_loader, opt)
+    generator = train(gen, dis, real_loader, real_loader_unroll, opt)

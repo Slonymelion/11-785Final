@@ -126,10 +126,10 @@ class DualPathNet(nn.Module):
         output = F.avg_pool2d(output, [output.size(2), output.size(3)], stride=1)
         output = output.reshape(output.shape[0], output.shape[1])
         
-        output = self.fc_layers(output)
+        real_output = self.fc_layers(output)
         #output = self.lastsig(output)
 
-        return output
+        return real_output, output
     
 
 # weight initialization function
