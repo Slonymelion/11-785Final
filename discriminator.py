@@ -103,7 +103,7 @@ class DualPathNet(nn.Module):
         # fully connected layers
         last_out = out_sizes[-1] + (block_repeats[-1]+1)* incre_sizes[-1]
         self.fc_layers = nn.Linear(last_out, num_classes, bias=False)
-        #self.lastsig = nn.Sigmoid()
+        self.lastsig = nn.Sigmoid()
     
     def conv_layer(self, first, last, increment, repeat, stride):
         strides = [stride] + [1] * (repeat - 1)
@@ -127,7 +127,7 @@ class DualPathNet(nn.Module):
         output = output.reshape(output.shape[0], output.shape[1])
         
         real_output = self.fc_layers(output)
-        #output = self.lastsig(output)
+#        real_output = self.lastsig(output)
 
         return real_output, output
     
@@ -142,10 +142,10 @@ def init_weights(m, mode='xavier'):
         
 
 # macro for several DPN architecture
-def DPNmini(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
+def DPNmini(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
-    structure['soundnet_out'] = 64
+    structure['soundnet_out'] = sound_out_dim
     structure['ins'] = [96, 128]
     structure['outs'] = [256, 512]
     structure['repeats'] = [2, 2, 2]
@@ -158,10 +158,10 @@ def DPNmini(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, Soun
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN26(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
-    structure['soundnet_out'] = 64
+    structure['soundnet_out'] = sound_out_dim
     structure['ins'] = [96, 192, 384, 768]
     structure['outs'] = [256, 512, 1024, 2048]
     structure['repeats'] = [2, 2, 2, 2]
@@ -174,10 +174,10 @@ def DPN26(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundN
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN26small(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN26small(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
-    structure['soundnet_out'] = 64
+    structure['soundnet_out'] = sound_out_dim
     structure['ins'] = [96, 384, 768]
     structure['outs'] = [256, 1024, 2048]
     structure['repeats'] = [2, 2, 2]
@@ -190,10 +190,10 @@ def DPN26small(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, S
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN50(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
-    structure['soundnet_out'] = 64
+    structure['soundnet_out'] = sound_out_dim
     structure['ins'] = [96, 192, 384, 768]
     structure['outs'] = [256, 512, 1024, 2048]
     structure['repeats'] = [3, 4, 6, 3]
@@ -206,10 +206,10 @@ def DPN50(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundN
     return DualPathNet(num_feats, num_classes, structure)
 
 
-def DPN50small(num_feats, num_classes, kernel=5, stride=2, negative_slope=0.2, SoundNet=None):
+def DPN50small(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, negative_slope=0.2, SoundNet=None):
     structure = {}
     structure['soundnet'] = SoundNet
-    structure['soundnet_out'] = 64
+    structure['soundnet_out'] = sound_out_dim
     structure['ins'] = [192, 384, 768]
     structure['outs'] = [512, 1024, 2048]
     structure['repeats'] = [3, 6, 4]

@@ -6,12 +6,15 @@ from torch.utils.data import TensorDataset
 from PIL import Image
 import torchvision
 import torch
-
+"""
+Current implementation picks random pics but always the longest
+speech from the same person, which may cause alignment problem
+"""
 
 class ImageVoice(TensorDataset):
-  def __init__(self, data_path=''):
+  def __init__(self, data_path='', face_folder='cropFaces'):
 #    data_path = os.environ['data_path']
-    topdir = os.path.join(data_path, 'cropFaces')
+    topdir = os.path.join(data_path, face_folder)
 #    topdir = data_path + "/cropFaces"
     self.pics = []
     
@@ -42,15 +45,16 @@ class ImageVoice(TensorDataset):
   def __getitem__(self, idx):
     picdir, voicedir = self.pics[idx]
     pic = picdir + '/' + random.choice(os.listdir(picdir))
+#    l = len(os.listdir(picdir))
+#    pic = picdir + '/' + os.listdir(picdir)[l // 2]
     
     voice = np.array([])
     voice_tmp = np.array([])
 
-    for voicefile in os.listdir(voicedir):
+    for voicefile in os.listdir(voicedir):    
       voice_tmp = np.load(voicedir + '/' + voicefile)
       if voice_tmp.shape[0] > voice.shape[0]:
         voice = voice_tmp
-
     img = Image.open(pic)
     img = torchvision.transforms.ToTensor()(img)
 

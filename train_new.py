@@ -35,7 +35,12 @@ def train(gen, dis, dataloader, opt):
     feature_match_ratio = opt['feature_match_ratio']
     image_match_ratio = opt['image_match_ratio']
     do_label_smoothing = opt['label_smoothing']
-    sample_interval = 300  # save 25 images every 100 batches
+    do_label_flip = opt['label_flipping']
+    label_flip_rounds = opt['label_flipping_epochs']
+    adv_loss_type = opt['adv_loss_type']
+    use_latent = opt['use_latent']
+    lr = opt['learning_rate']
+    sample_interval = 600  # save 25 images every 100 batches
     save_interval = sample_interval * 2  # save model every 1000 batches
     
 #    device = torch.device('cpu')
@@ -44,30 +49,28 @@ def train(gen, dis, dataloader, opt):
     # tuning parameter
 #    clip_value = 0.01  # weight clipping, used in WGAN, not in WGAN-GP
     # optimizer parameter
-    betas = (0.5, 0.999)
-    lr = 0.0001  # from WGAN-GP paper
+    betas = (0.5, 0.999)  # from WGAN-GP paper
     
     # optimizers & losses
     optimizer_G = torch.optim.Adam(gen.parameters(), lr=lr*n_critic*2, betas=betas)
 #    optimizer_G = torch.optim.SGD(gen.parameters(), lr=0.01, momentum=0.9)
     optimizer_D = torch.optim.Adam(dis.parameters(), lr=lr, betas=betas)
 #    optimizer_D = torch.optim.SGD(dis.parameters(), lr=0.0001)
-#    adversarial_loss = torch.nn.BCELoss()
-#    metric_loss = torch.nn.CosineSimilarity()
-    adversarial_loss = torch.nn.MSELoss()
+    if adv_loss_type == 'bce':
+        adversarial_loss = torch.nn.BCELoss()
+    elif adv_loss_type == 'mse':
+        adversarial_loss = torch.nn.MSELoss()
+    metric_loss = torch.nn.MSELoss()
+    
     # warm start from disk
     if warm_id:
-        try:
-            dis_save_file = 'discriminator_{:d}'.format(warm_id)
-            dis_save_file = os.path.join('experiments', str(opt['warm_run_id']), dis_save_file)
-            gen_save_file = 'generator_{:d}'.format(warm_id)
-            gen_save_file = os.path.join('experiments', str(opt['warm_run_id']), gen_save_file)
-            gen = warm_start_model(gen, gen_save_file)
-            dis = warm_start_model(dis, dis_save_file)
-            logger.info('model warm started from experiment folder {}, model id {}'.format(opt['warm_run_id'], warm_id))
-        except Exception as e:
-            print(e)
-            print('warm start failed, start from scratch')
+        dis_save_file = 'discriminator_{:d}'.format(warm_id)
+        dis_save_file = os.path.join('experiments', str(opt['warm_run_id']), dis_save_file)
+        gen_save_file = 'generator_{:d}'.format(warm_id)
+        gen_save_file = os.path.join('experiments', str(opt['warm_run_id']), gen_save_file)
+        gen = warm_start_model(gen, gen_save_file)
+        dis = warm_start_model(dis, dis_save_file)
+        logger.info('model warm started from experiment folder {}, model id {}'.format(opt['warm_run_id'], warm_id))
         
     batches_done = 0  # record training process in terms of batches, not epochs
     
@@ -90,13 +93,17 @@ def train(gen, dis, dataloader, opt):
             real_imgs, sounds = imgs.to(device), sounds.to(device)
             
             # Sample noise as generator input
-            z = Variable(Tensor(np.random.normal(0, 1, size=(imgs.shape[0], latent_dim, 1, 1))))
-            z = z.to(device)
+            if use_latent:
+                z = Variable(Tensor(np.random.normal(0, 1, size=(imgs.shape[0], latent_dim, 1, 1))))
+                z = z.to(device)
+            else:
+                z = None
             # Generate real and fake labels for loss calculation
             if do_label_smoothing:
                 valid = 1 - torch.rand((imgs.shape[0], 1)) * 0.1
                 valid = Variable(valid, requires_grad=False)
-                fake = torch.rand((imgs.shape[0], 1)) * 0.1
+                # fake = torch.rand((imgs.shape[0], 1)) * 0.1
+                fake = torch.zeros((imgs.shape[0], 1))  # single sided label smoothing
                 fake = Variable(fake, requires_grad=False)
                 valid_gen = torch.ones((imgs.shape[0], 1))
                 valid_gen = Variable(valid_gen, requires_grad=False)
@@ -104,6 +111,10 @@ def train(gen, dis, dataloader, opt):
                 valid = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(1.0), requires_grad=False)
                 valid_gen = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(1.0), requires_grad=False)
                 fake = Variable(torch.FloatTensor(imgs.shape[0], 1).fill_(0.0), requires_grad=False)
+            if do_label_flip > 0:
+                if (epoch+1) <= label_flip_rounds:
+                    idx = torch.randperm(imgs.shape[0])[:do_label_flip]
+                    valid[idx], fake[idx] = fake[idx], valid[idx]
                 
             valid, fake, valid_gen = valid.to(device), fake.to(device), valid_gen.to(device)
 
@@ -144,7 +155,7 @@ def train(gen, dis, dataloader, opt):
                 
                 g_loss = adversarial_loss(fake_validity, valid_gen)
     #            g_loss = -torch.mean(fake_validity)
-                g_feature_loss = adversarial_loss(fake_latent, real_latent.detach())
+                g_feature_loss = metric_loss(fake_latent, real_latent.detach())
                 g_image_loss = adversarial_loss(real_imgs, fake_imgs)
                 g_loss += feature_match_ratio * g_feature_loss + image_match_ratio*g_image_loss
     
@@ -154,23 +165,24 @@ def train(gen, dis, dataloader, opt):
                 optimizer_G.step()  
     
                 logger.info(
-                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [G feature loss: %f] [G image loss: %f]"
-                    % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), g_loss.item(), g_feature_loss.item(), g_image_loss.item())
+                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [D GP loss: %f] [G loss: %f] [G feature loss: %f] [G image loss: %f]"
+                    % (epoch+1, epochs, i+1, len(real_loader), d_loss.item(), gradient_penalty.item(), g_loss.item(), g_feature_loss.item(), g_image_loss.item())
                 )
                 logger.info(
-                    "\t[D first grad: %f] [D final grad: %f] [G first grad: %f] [G final grad: %f] "
+                    "[D first grad: %f] [D final grad: %f] [G first grad: %f] [G final grad: %f] [G respath first grad: %f] "
                     % (
                             torch.mean(torch.abs(dis.firstblock[0].weight.grad)).item(),
                             torch.mean(torch.abs(dis.fc_layers.weight.grad)).item(),
-                            torch.mean(torch.abs(gen.layers[0].weight.grad)).item(), 
-                            torch.mean(torch.abs(gen.finallayer.weight.grad)).item()
+                            torch.mean(torch.abs(gen.layers[0][0].weight.grad)).item(), 
+                            torch.mean(torch.abs(gen.finallayer.weight.grad)).item(),
+                            torch.mean(torch.abs(gen.shortcut[1][0].weight.grad)).item(),
                             )
                 )
                 if batches_done % sample_interval == 0:
-                    save_image(real_imgs.data[:25], os.path.join('..', 'reals', "{:d}.png".format(batches_done)),
-                               nrow=5, normalize=True)
-                    save_image(fake_imgs.data[:25], os.path.join('..', 'fakes', "{:d}.png".format(batches_done)),
-                               nrow=5, normalize=True)
+                    save_image(real_imgs.data[:16], os.path.join('experiments', opt['run_id'], 'reals', "{:d}.png".format(batches_done)),
+                               nrow=4, normalize=True)
+                    save_image(fake_imgs.data[:16], os.path.join('experiments', opt['run_id'], 'fakes', "{:d}.png".format(batches_done)),
+                               nrow=4, normalize=True)
                     logger.info('generated sample images saved to disk as {:d}.png'.format(batches_done))
                 if batches_done % save_interval == 0:
                     dis_save_file = 'discriminator_{:d}'.format(batches_done)
@@ -186,7 +198,7 @@ def train(gen, dis, dataloader, opt):
 # helper function for warm starting model
 def warm_start_model(model, model_save_file):
     new_state = model.state_dict()
-    warm_state = torch.load(model_save_file)['network']
+    warm_state = torch.load(model_save_file)
     for (k, v) in warm_state.items():
         if k in new_state:
             shape_old = warm_state[k].size()
@@ -229,6 +241,8 @@ if __name__ == '__main__':
     if not os.path.exists('./experiments'):
         os.mkdir('./experiments')
     os.mkdir('./experiments/%s' % run_id)
+    os.mkdir('./experiments/%s/reals' % run_id)
+    os.mkdir('./experiments/%s/fakes' % run_id)
     print("Saving models and logs to ./experiments/%s" % run_id)
     
     logger.setLevel(logging.DEBUG)
@@ -250,7 +264,7 @@ if __name__ == '__main__':
     logger.addHandler(sysout)    
     
     # generate data loader
-    bsize = 32  # batch size
+    bsize = 16  # batch size
     nworkers = mp.cpu_count() # number of workers
     shuffle = True
     train_path = ''  # real training set
@@ -261,25 +275,36 @@ if __name__ == '__main__':
     # generate model
     opt = {'in_feat': 1, 
            'out_feat': 3, 
-           'latent_dim': 100, 
-           'epochs': 20,
-           'annealing_schedule':[5, 10, 15, 18, 20], 
+           'use_latent':True,
+           'latent_dim': 64,
+           'soundnet_out_dim': 128,
+           'epochs': 15,
+           'annealing_schedule':[4, 7, 10], 
            'do_gradient_penalty': True,
            'n_critic':3, 
            'lambda_gp': 1, 
            'feature_match_ratio':10,
            'image_match_ratio':1,
            'label_smoothing': True,
+           'label_flipping': 3,
+           'label_flipping_epochs': 4,
+           'learning_rate': 1e-4,
            'run_id': run_id, 
-           'warm_run_id': None, 
-           'warm_model_id':None
+           'warm_run_id': 1556182091, 
+           'warm_model_id':None,
+           'adv_loss_type':'mse',
+           'general_note': 'ImageVoice now picks only mid picture within each folder, sigmoid finallayer in generator'
            }
     logger.info(opt)
     real_feats = 3  # color channel count for real imgs
     num_classes = 1  # discriminator output size, only outputs a validity score
     soundnet = G.SoundCNN(opt)
-    gen = G.CGen(opt, SoundNet=soundnet)
-    dis = D.DPNmini(real_feats, num_classes, kernel=5, SoundNet=soundnet)
+    gen = G.CResGen(opt, SoundNet=soundnet)
+    dis = D.DPNmini(real_feats, num_classes, kernel=5, 
+                       sound_out_dim=opt['soundnet_out_dim'], 
+                       SoundNet=soundnet)
+    gen.apply(G.weight_init)
+    dis.apply(G.weight_init)
     
     # train model
     generator = train(gen, dis, real_loader, opt)
