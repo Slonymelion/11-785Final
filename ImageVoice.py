@@ -74,3 +74,15 @@ class ImageVoice(TensorDataset):
     return img, torch.from_numpy(voice)
 
 
+# dataset used for pre-train generator
+def create_dataset(path='cropFaces_original'):
+#    upscale = torchvision.transforms.Resize(224)
+    totensor = torchvision.transforms.ToTensor()
+#    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+#                                                 std=[0.229, 0.224, 0.225])
+    trans = torchvision.transforms.Compose([totensor])
+    train_ds = torchvision.datasets.ImageFolder(path, transform=trans)
+    
+    return train_ds
+
+

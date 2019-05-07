@@ -408,7 +408,7 @@ class CResGenDeepDeep(nn.Module):
         
         self.soundnet = SoundNet
         
-        in_feat = opt['latent_dim']+opt['soundnet_out_dim'] if self.soundnet else opt['latent_dim']  # 100 dimension latent variable + 64 dimensional sound
+        in_feat = opt['latent_dim']+opt['soundnet_out_dim'] if opt['use_latent'] else opt['soundnet_out_dim']  # 100 dimension latent variable + 64 dimensional sound
         dim = 128 # output image dimension
         ks = 4  # kernel size
         s = 1   # stride
@@ -458,15 +458,19 @@ class CResGenDeepDeep(nn.Module):
         self.sigmoid = nn.Sigmoid()
 #        self.tanh = nn.Tanh()
     
-    def forward(self, z, sound=None):
+    def forward(self, z, x=None, sound=None):
         if sound is not None and self.soundnet is not None:
             x = self.soundnet(sound)
             if z is not None:
                 x = torch.cat([z, x.unsqueeze(3)], dim=1)
             else:
                 x = x.unsqueeze(3)
-        else:
+        elif x is None:
             x = z
+        elif z is not None:
+            x = torch.cat([z, x.unsqueeze(2).unsqueeze(3)], dim=1)
+        else:
+            x = x.unsqueeze(2).unsqueeze(3)
         
         # residual path every 2 blocks
         ins = self.layers[0](x)

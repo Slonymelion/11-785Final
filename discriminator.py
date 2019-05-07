@@ -222,6 +222,33 @@ def DPN50small(num_feats, num_classes, kernel=5, stride=2, sound_out_dim=128, ne
     return DualPathNet(num_feats, num_classes, structure)
 
 
+# Pretraiend model to use
+class PreVGG(nn.Module):
+    def __init__(self, features=128):
+        super(PreVGG, self).__init__()
+        self.vgg = torchvision.models.vgg11(pretrained=True)
+        # freeze parameter weights
+        for param in self.vgg.parameters():
+            param.requires_grad = False
+        lfc = nn.Sequential(*[nn.Linear(25088, features, bias=True)])
+        self.vgg.classifier = lfc
+        self.mean = torch.Tensor([0.485, 0.456, 0.406])
+        self.std = torch.Tensor([0.229, 0.224, 0.225])
+        self.mean = self.mean.unsqueeze(1).unsqueeze(2).repeat((1, 224, 224))
+        self.std = self.std.unsqueeze(1).unsqueeze(2).repeat((1, 224, 224))
+        self.device = torch.device('cuda')
+        self.mean, self.std = self.mean.to(self.device), self.std.to(self.device)
+        
+    
+    def forward(self, x):
+        x = F.interpolate(x, size=224)
+        mean = self.mean.unsqueeze(0).repeat((x.size(0), 1, 1, 1))
+        std = self.std.unsqueeze(0).repeat((x.size(0), 1, 1, 1))
+
+        x = (x-mean)/std
+        return self.vgg(x)
+    
+        
 # function to remove '._' files
 def findNremove(path,pattern,maxdepth=1):
     cpath=path.count(os.sep)
